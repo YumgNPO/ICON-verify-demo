@@ -1,54 +1,48 @@
 'use client';
-import { useEffect, useState } from 'react';
+
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import QRCode from 'qrcode'; // Make sure this is here!
+import QRCode from 'qrcode';
+import { PDFDocument, rgb } from 'pdf-lib';
 
 export default function GenerateCertificate() {
   const router = useRouter();
-  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(true); 
   const [isLoading, setIsLoading] = useState(false);
 
-  // THE MASTER STATE: Pre-filled with the exact Saipem/ICON demo data
+  // State mapped strictly to the PDF variables
   const [formData, setFormData] = useState({
     certificateNumber: 'ILRIL/SCNL/PSV/T7 BONNY/05/26/07',
     equipmentOwner: 'Saipem Contracting Nigeria Limited',
-    calibrationDate: '2026-05-17',
-    nextDueDate: '2027-05-16',
+    serviceRequest: 'Calibration & Certification', 
     location: 'T7 PROJECT NLNG BONNY SITE',
-    
+    calibrationDate: '17th MAY 2026',
+    nextDueDate: '16th MAY 2027',
     equipmentName: 'PRESSURE SAFETY VALVE',
     manufacturer: 'RAJTECH',
-    serialNumber: 'PSV 004',
-    assetNumber: 'NOT SEEN',
-    equipmentRange: '0-10 BAR',
+    serialNumber: 'PSV 005',
+    assetNo: 'NOT SEEN',
+    psvType: 'SAFETY VALVE', 
+    range: '0-10 BAR',
     setPressure: '10 BAR',
-    
-    ambientTemperature: '30°C',
-    refInstrumentMake: 'Ashcroft Test Gauge',
-    refInstrumentModel: 'DPG224',
-    refSerialNumber: '2831125818',
-    refCalDate: '2025-12-14',
-    refDueDate: '2026-12-13',
-    
-    displayStatus: 'Excellent',
-    flangeStatus: 'Excellent',
-    calibrationRemark: 'Ok',
-    fitForUse: true,
+    refDescription: 'Ashcroft Test Gauge', 
+    refModel: 'DPG224',
+    refSerialNo: '2831125818',
+    ambientTemp: '30°C',
+    refCalDate: '14/12/2025',
+    refNextDue: '13/12/2026',
+    display: 'Excellent',
+    flangeIntegrity: 'Excellent',
+    remark: 'Ok',
   });
 
-  useEffect(() => {
-    const auth = localStorage.getItem('isAuthenticated');
-    if (!auth) router.push('/');
-    else setIsAuthorized(true);
-  }, [router]);
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    const checked = (e.target as HTMLInputElement).checked;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token'); 
+    router.push('/'); 
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,173 +58,272 @@ export default function GenerateCertificate() {
       });
 
       if (!response.ok) throw new Error("Backend connection failed");
-
-      // 2. Get Database ID
       const dbData = await response.json();
-      const certificateId = dbData.id; 
+      const certificateId = dbData.id;
 
-      // 3. Generate QR Code for Verification URL
+      // 2. Generate QR Code
       const verificationUrl = `http://localhost:3000/verify/${certificateId}`;
       const qrImage = await QRCode.toDataURL(verificationUrl);
-      console.log("Success! QR Code generated for:", verificationUrl);
       
-      // 4. Open Demo PDF
-      window.open('/demo-certificate.pdf', '_blank');
+      // 3. Load Blank Template
+      const existingPdfBytes = await fetch('/blank-template.pdf').then(res => res.arrayBuffer());
+      const pdfDoc = await PDFDocument.load(existingPdfBytes);
+      
+      const pages = pdfDoc.getPages();
+      const firstPage = pages[0];
+      const secondPage = pages[1];
+
+      const textSize = 10;
+      const textsize1 = 8;
+      const textsize2 = 6
+      const textColor = rgb(0, 0, 0);
+
+      // ==========================================
+      // PAGE 1 STAMPING
+      // ==========================================
+      const page1X = 230; 
+      firstPage.drawText(formData.certificateNumber, { x: page1X, y: 628, size: textSize, color: textColor });
+      firstPage.drawText(formData.equipmentOwner, { x: page1X, y: 605, size: textSize, color: textColor });
+      firstPage.drawText(formData.equipmentName, { x: page1X, y: 570, size: textSize, color: textColor });
+      firstPage.drawText(formData.manufacturer, { x: page1X, y: 540, size: textSize, color: textColor });
+      firstPage.drawText(formData.serialNumber, { x: page1X, y: 510, size: textSize, color: textColor });
+      firstPage.drawText(formData.assetNo, { x: page1X, y: 480, size: textSize, color: textColor }); 
+      firstPage.drawText(formData.ambientTemp, { x: page1X, y: 450, size: textSize, color: textColor });
+      firstPage.drawText(formData.calibrationDate, { x: page1X, y: 420, size: textSize, color: textColor });
+      firstPage.drawText(formData.nextDueDate, { x: page1X, y: 390, size: textSize, color: textColor });
+      firstPage.drawText(formData.location, { x: page1X, y: 360, size: textSize, color: textColor });
+      
+      // Page 1 Remark Blank
+      firstPage.drawText(formData.equipmentName, { x: 260, y: 135, size: textSize, color: textColor }); 
+
+      // Page 1 QR Code
+      const qrImageBytes = await fetch(qrImage).then(res => res.arrayBuffer());
+      const qrImageEmbed = await pdfDoc.embedPng(qrImageBytes);
+      firstPage.drawImage(qrImageEmbed, {
+        x: 460, 
+        y: 600, 
+        width: 100,
+        height: 100,
+      });
+
+      // Page 1 Standard Instrument Table
+      const p1TableY = 180;
+      firstPage.drawText(formData.refDescription, { x: 70, y: p1TableY, size: textSize, color: textColor });
+      firstPage.drawText(formData.refModel, { x: 220, y: p1TableY, size: textSize, color: textColor });
+      firstPage.drawText(formData.refSerialNo, { x: 300, y: p1TableY, size: textSize, color: textColor });
+      firstPage.drawText(formData.refCalDate, { x: 400, y: p1TableY, size: textSize, color: textColor });
+      firstPage.drawText(formData.refNextDue, { x: 480, y: p1TableY, size: textSize, color: textColor });
+
+      // ==========================================
+      // PAGE 2 STAMPING
+      // ==========================================
+      secondPage.drawText(formData.certificateNumber, { x: 230, y: 580, size: textSize, color: textColor });
+      secondPage.drawText(formData.equipmentOwner, { x: 230, y: 560, size: textSize, color: textColor });
+      secondPage.drawText(formData.serviceRequest, { x: 230, y: 540, size: textSize, color: textColor }); 
+      
+      // Left Info Column
+      const p2LeftX = 180;
+      secondPage.drawText(formData.equipmentName, { x: p2LeftX, y: 505, size: textSize, color: textColor });
+      secondPage.drawText(formData.manufacturer, { x: p2LeftX, y: 485, size: textSize, color: textColor });
+      secondPage.drawText(formData.serialNumber, { x: p2LeftX, y: 465, size: textSize, color: textColor });
+      secondPage.drawText(formData.assetNo, { x: p2LeftX, y: 445, size: textSize, color: textColor });
+      secondPage.drawText(formData.range, { x: p2LeftX, y: 425, size: textSize, color: textColor });
+      secondPage.drawText(formData.refDescription, { x: 220, y: 395, size: textSize, color: textColor }); 
+
+      // Right Info Column
+      const p2RightX = 420;
+      secondPage.drawText(formData.ambientTemp, { x: p2RightX, y: 485, size: textSize, color: textColor });
+      secondPage.drawText(formData.calibrationDate, { x: p2RightX, y: 465, size: textSize, color: textColor });
+      secondPage.drawText(formData.nextDueDate, { x: p2RightX, y: 445, size: textSize, color: textColor });
+
+      // Page 2 Physical Inspection Table
+      const p2PhysTableY = 320;
+      secondPage.drawText(formData.display, { x: 100, y: p2PhysTableY, size: textSize, color: textColor }); 
+      secondPage.drawText(formData.flangeIntegrity, { x: 280, y: p2PhysTableY, size: textSize, color: textColor }); 
+
+      // Page 2 Calibration Data Table
+      const p2CalTableY = 230;
+      secondPage.drawText(formData.psvType, { x: 70, y: p2CalTableY, size: textSize, color: textColor }); 
+      secondPage.drawText(formData.serialNumber, { x: 180, y: p2CalTableY, size: textSize, color: textColor });
+      secondPage.drawText(formData.range, { x: 290, y: p2CalTableY, size: textSize, color: textColor });
+      secondPage.drawText(formData.setPressure, { x: 390, y: p2CalTableY, size: textSize, color: textColor });
+      secondPage.drawText(formData.remark, { x: 480, y: p2CalTableY, size: textSize, color: textColor });
+
+      // Page 2 Bottom Dates
+      const signatureY = 155; 
+      secondPage.drawText(formData.calibrationDate, { x: 230, y: signatureY, size: textSize, color: textColor }); 
+      secondPage.drawText(formData.calibrationDate, { x: 450, y: signatureY, size: textSize, color: textColor }); 
+
+      // Compile and Open PDF
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const pdfUrl = URL.createObjectURL(blob);
+      window.open(pdfUrl, '_blank');
 
     } catch (error) {
-      console.error("Error saving certificate:", error);
-      alert("Note: Backend server is not running yet. PDF will not open.");
+       console.error("Error generating PDF:", error);
+       alert("Failed to connect to the database. Make sure the Node.js server is running on port 5000.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center">Verifying access...</div>;
+  if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center">Unauthorized</div>;
 
-  // The universal CSS string for all our inputs to fix the invisible text issue
-  const inputCSS = "w-full p-2 border border-slate-300 rounded-md text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none";
+  const inputCss = "w-full p-2 border border-slate-300 rounded-md text-slate-900 bg-white mt-1";
+  const labelCss = "text-sm font-semibold text-slate-700";
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-slate-50 py-10 px-4">
+      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-8">
         
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-8 border-b pb-4">
           <div>
             <h1 className="text-3xl font-bold text-slate-800">Certificate Generator</h1>
             <p className="text-slate-500 mt-1">Review and finalize equipment details.</p>
           </div>
-          <button onClick={() => { localStorage.removeItem('isAuthenticated'); router.push('/'); }} className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border rounded-lg hover:bg-slate-100">
+          <button onClick={handleLogout} className="px-4 py-2 border rounded-md hover:bg-slate-50 text-slate-700">
             Log Out
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-8">
           
-          {/* SECTION 1: Core Information */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">1. Core Information</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Section 1: Core Information */}
+          <div className="bg-slate-50 p-6 rounded-lg border">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">1. Core Information</h2>
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Certificate Number</label>
-                <input type="text" name="certificateNumber" value={formData.certificateNumber} onChange={handleChange} className={inputCSS} required />
+                <label className={labelCss}>Certificate Number</label>
+                <input type="text" name="certificateNumber" value={formData.certificateNumber} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Equipment Owner</label>
-                <input type="text" name="equipmentOwner" value={formData.equipmentOwner} onChange={handleChange} className={inputCSS} required />
+                <label className={labelCss}>Equipment Owner / Customer</label>
+                <input type="text" name="equipmentOwner" value={formData.equipmentOwner} onChange={handleChange} className={inputCss} />
+              </div>
+              <div className="col-span-2">
+                <label className={labelCss}>Service Request</label>
+                <input type="text" name="serviceRequest" value={formData.serviceRequest} onChange={handleChange} className={inputCss} />
+              </div>
+              <div className="col-span-2">
+                <label className={labelCss}>Location</label>
+                <input type="text" name="location" value={formData.location} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
-                <input type="text" name="location" value={formData.location} onChange={handleChange} className={inputCSS} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Cal Date</label>
-                  <input type="date" name="calibrationDate" value={formData.calibrationDate} onChange={handleChange} className={inputCSS} required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Due Date</label>
-                  <input type="date" name="nextDueDate" value={formData.nextDueDate} onChange={handleChange} className={inputCSS} required />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 2: Equipment Specs */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">2. Equipment Specifications</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Equipment Name</label>
-                <input type="text" name="equipmentName" value={formData.equipmentName} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>Calibration Date</label>
+                <input type="text" name="calibrationDate" value={formData.calibrationDate} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Manufacturer</label>
-                <input type="text" name="manufacturer" value={formData.manufacturer} onChange={handleChange} className={inputCSS} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Serial Number</label>
-                <input type="text" name="serialNumber" value={formData.serialNumber} onChange={handleChange} className={inputCSS} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Asset Number</label>
-                <input type="text" name="assetNumber" value={formData.assetNumber} onChange={handleChange} className={inputCSS} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Range</label>
-                <input type="text" name="equipmentRange" value={formData.equipmentRange} onChange={handleChange} className={inputCSS} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Set Pressure</label>
-                <input type="text" name="setPressure" value={formData.setPressure} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>Next Due Date</label>
+                <input type="text" name="nextDueDate" value={formData.nextDueDate} onChange={handleChange} className={inputCss} />
               </div>
             </div>
           </div>
 
-          {/* SECTION 3: Reference Instrument */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">3. Reference Instrument</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Section 2: Equipment Specifications */}
+          <div className="bg-slate-50 p-6 rounded-lg border">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">2. Equipment Specifications</h2>
+            <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Make</label>
-                <input type="text" name="refInstrumentMake" value={formData.refInstrumentMake} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>Equipment</label>
+                <input type="text" name="equipmentName" value={formData.equipmentName} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Model</label>
-                <input type="text" name="refInstrumentModel" value={formData.refInstrumentModel} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>Manufacturer</label>
+                <input type="text" name="manufacturer" value={formData.manufacturer} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Serial Number</label>
-                <input type="text" name="refSerialNumber" value={formData.refSerialNumber} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>Serial Number</label>
+                <input type="text" name="serialNumber" value={formData.serialNumber} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Ambient Temp</label>
-                <input type="text" name="ambientTemperature" value={formData.ambientTemperature} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>ASSET NO</label>
+                <input type="text" name="assetNo" value={formData.assetNo} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Ref Cal Date</label>
-                <input type="date" name="refCalDate" value={formData.refCalDate} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>PSV TYPE</label>
+                <input type="text" name="psvType" value={formData.psvType} onChange={handleChange} className={inputCss} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Ref Due Date</label>
-                <input type="date" name="refDueDate" value={formData.refDueDate} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>RANGE</label>
+                <input type="text" name="range" value={formData.range} onChange={handleChange} className={inputCss} />
+              </div>
+              <div>
+                <label className={labelCss}>SET PRESSURE</label>
+                <input type="text" name="setPressure" value={formData.setPressure} onChange={handleChange} className={inputCss} />
               </div>
             </div>
           </div>
 
-          {/* SECTION 4: Inspection Results */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">4. Inspection Results</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          {/* Section 3: Reference Instrument Used */}
+          <div className="bg-slate-50 p-6 rounded-lg border">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">3. Reference Instrument Used</h2>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-3">
+                <label className={labelCss}>Description</label>
+                <input type="text" name="refDescription" value={formData.refDescription} onChange={handleChange} className={inputCss} />
+              </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Display Status</label>
-                <select name="displayStatus" value={formData.displayStatus} onChange={handleChange} className={inputCSS}>
+                <label className={labelCss}>Model</label>
+                <input type="text" name="refModel" value={formData.refModel} onChange={handleChange} className={inputCss} />
+              </div>
+              <div>
+                <label className={labelCss}>Serial No.</label>
+                <input type="text" name="refSerialNo" value={formData.refSerialNo} onChange={handleChange} className={inputCss} />
+              </div>
+              <div>
+                <label className={labelCss}>Ambient Temp</label>
+                <input type="text" name="ambientTemp" value={formData.ambientTemp} onChange={handleChange} className={inputCss} />
+              </div>
+              <div>
+                <label className={labelCss}>Calibration Date</label>
+                <input type="text" name="refCalDate" value={formData.refCalDate} onChange={handleChange} className={inputCss} />
+              </div>
+              <div>
+                <label className={labelCss}>Next Due</label>
+                <input type="text" name="refNextDue" value={formData.refNextDue} onChange={handleChange} className={inputCss} />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Inspection & Calibration Data */}
+          <div className="bg-slate-50 p-6 rounded-lg border">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">4. Inspection & Calibration Data</h2>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className={labelCss}>Display</label>
+                <select name="display" value={formData.display} onChange={handleChange} className={inputCss}>
                   <option value="Excellent">Excellent</option>
                   <option value="Good">Good</option>
                   <option value="Poor">Poor</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Flange Integrity</label>
-                <select name="flangeStatus" value={formData.flangeStatus} onChange={handleChange} className={inputCSS}>
+                <label className={labelCss}>Inlet/Outlet Flange Integrity</label>
+                <select name="flangeIntegrity" value={formData.flangeIntegrity} onChange={handleChange} className={inputCss}>
                   <option value="Excellent">Excellent</option>
                   <option value="Good">Good</option>
                   <option value="Poor">Poor</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Calibration Remark</label>
-                <input type="text" name="calibrationRemark" value={formData.calibrationRemark} onChange={handleChange} className={inputCSS} />
+                <label className={labelCss}>REMARK</label>
+                <input type="text" name="remark" value={formData.remark} onChange={handleChange} className={inputCss} />
               </div>
-              <div className="md:col-span-3 flex items-center mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                <input type="checkbox" name="fitForUse" checked={formData.fitForUse} onChange={handleChange} className="w-6 h-6 text-green-600 rounded cursor-pointer" />
-                <label className="ml-3 text-lg font-bold text-green-800 cursor-pointer">CERTIFIED FIT FOR USE</label>
-              </div>
+            </div>
+            
+            <div className="bg-green-50 border border-green-200 text-green-800 p-4 rounded-md flex items-center font-bold">
+              <span className="mr-2">✅</span> CERTIFIED FIT FOR USE
             </div>
           </div>
 
-          <div className="flex justify-end pt-4 pb-12">
-            <button type="submit" disabled={isLoading} className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transition-colors text-lg w-full md:w-auto">
-              {isLoading ? 'Processing...' : 'Generate Certificate'}
+          <div className="flex justify-end">
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className={`bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold text-lg shadow-md transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isLoading ? 'Generating...' : 'Generate Certificate'}
             </button>
           </div>
 
